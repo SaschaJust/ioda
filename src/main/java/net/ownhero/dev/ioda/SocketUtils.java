@@ -12,11 +12,19 @@
  ******************************************************************************/
 package net.ownhero.dev.ioda;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.Security;
 import java.util.LinkedList;
 
+import javax.net.ssl.SSLSocketFactory;
+
+import net.ownhero.dev.ioda.sockets.CachingSSLSocketFactory;
 import net.ownhero.dev.ioda.sockets.CachingSocketImplFactory;
+import net.ownhero.dev.kanuni.annotations.file.WritableDirectory;
+import net.ownhero.dev.kanuni.annotations.simple.NotNull;
 import net.ownhero.dev.kanuni.conditions.Condition;
 import net.ownhero.dev.kisa.Logger;
 
@@ -26,15 +34,38 @@ import net.ownhero.dev.kisa.Logger;
  */
 public class SocketUtils {
 	
-	public static final void enableCaching() {
+	public static final void disableSSLSecurity() {
+		// stub
+	}
+	
+	public static final void enableCaching(@NotNull @WritableDirectory final File directory) {
 		try {
-			Socket.setSocketImplFactory(new CachingSocketImplFactory());
+			Security.setProperty("ssl.SocketFactory.provider", CachingSSLSocketFactory.class.getCanonicalName());
+			ServerSocket.setSocketFactory(new CachingSocketImplFactory(directory));
+			Socket.setSocketImplFactory(new CachingSocketImplFactory(directory));
 		} catch (final IOException e) {
 			if (Logger.logError()) {
 				Logger.error(e);
 			}
 			
 		};
+	}
+	
+	public static void main(final String[] args) {
+		disableSSLSecurity();
+		enableCaching(new File("/tmp"));
+		Socket s;
+		try {
+			s = SSLSocketFactory.getDefault().createSocket("own-hero.net", 443);
+			System.err.println(s.getPort());
+		} catch (final IOException e) {
+			// TODO Auto-generated catch block
+			if (Logger.logError()) {
+				Logger.error(e);
+			}
+			
+		}
+		
 	}
 	
 	/**

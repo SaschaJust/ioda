@@ -12,50 +12,51 @@
  ******************************************************************************/
 package net.ownhero.dev.ioda.sockets;
 
-import java.io.File;
-import java.net.SocketImpl;
-import java.net.SocketImplFactory;
 import java.util.LinkedList;
 
-import net.ownhero.dev.kanuni.annotations.file.WritableDirectory;
-import net.ownhero.dev.kanuni.annotations.simple.NotNull;
 import net.ownhero.dev.kanuni.conditions.Condition;
 
 /**
- * @author Sascha Just <sascha.just@st.cs.uni-saarland.de>
+ * The Class DelegationException.
  * 
+ * @author Sascha Just <sascha.just@st.cs.uni-saarland.de>
  */
-public class CachingSocketImplFactory implements SocketImplFactory {
+
+public class DelegationException extends RuntimeException {
 	
-	private File directory;
+	/** The Constant serialVersionUID. */
+	private static final long serialVersionUID = 1642318007815765616L;
 	
 	/**
+	 * Instantiates a new delegation exception.
 	 * 
+	 * @param message
+	 *            the message
 	 */
-	public CachingSocketImplFactory(final @NotNull @WritableDirectory File directory) {
-		// PRECONDITIONS
-		
-		try {
-			System.err.println("initialized " + getHandle());
-			this.directory = directory;
-		} finally {
-			// POSTCONDITIONS
-		}
+	public DelegationException(final String message) {
+		super(message);
 	}
 	
-	/*
-	 * (non-Javadoc)
-	 * @see java.net.SocketImplFactory#createSocketImpl()
+	/**
+	 * Instantiates a new delegation exception.
+	 * 
+	 * @param message
+	 *            the message
+	 * @param cause
+	 *            the cause
 	 */
-	@Override
-	public SocketImpl createSocketImpl() {
-		// PRECONDITIONS
-		
-		try {
-			return new CachingSocketImpl(this.directory);
-		} finally {
-			// POSTCONDITIONS
-		}
+	public DelegationException(final String message, final Throwable cause) {
+		super(message, cause);
+	}
+	
+	/**
+	 * Instantiates a new delegation exception.
+	 * 
+	 * @param cause
+	 *            the cause
+	 */
+	public DelegationException(final Throwable cause) {
+		super(cause);
 	}
 	
 	/**

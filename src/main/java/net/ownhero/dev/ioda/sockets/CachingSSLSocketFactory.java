@@ -16,27 +16,30 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.LinkedList;
 
-import javax.net.SocketFactory;
-
-import net.ownhero.dev.kanuni.conditions.Condition;
+import javax.net.ssl.SSLSocketFactory;
 
 /**
+ * Used in java.security:
+ * 
+ * <pre>
+ * ssl.SocketFactory.provider = net.ownhero.dev.ioda.Sockets.CachingSSLSocketFactory
+ * </pre>
+ * 
  * @author Sascha Just <sascha.just@st.cs.uni-saarland.de>
  * 
  */
-public class CachingSocketFactory extends SocketFactory {
+public class CachingSSLSocketFactory extends SSLSocketFactory {
 	
 	/**
 	 * 
 	 */
-	public CachingSocketFactory() {
+	public CachingSSLSocketFactory() {
 		// PRECONDITIONS
 		
 		try {
 			// TODO Auto-generated constructor stub
-			
+			System.err.println(getClass().getSimpleName());
 		} finally {
 			// POSTCONDITIONS
 		}
@@ -47,8 +50,27 @@ public class CachingSocketFactory extends SocketFactory {
 	 * @see javax.net.SocketFactory#createSocket(java.net.InetAddress, int)
 	 */
 	@Override
-	public Socket createSocket(final InetAddress host,
-	                           final int port) throws IOException {
+	public Socket createSocket(final InetAddress arg0,
+	                           final int arg1) throws IOException {
+		// PRECONDITIONS
+		
+		try {
+			// TODO Auto-generated method stub
+			return new CachingSSLSocket();
+		} finally {
+			// POSTCONDITIONS
+		}
+	}
+	
+	/*
+	 * (non-Javadoc)
+	 * @see javax.net.SocketFactory#createSocket(java.net.InetAddress, int, java.net.InetAddress, int)
+	 */
+	@Override
+	public Socket createSocket(final InetAddress arg0,
+	                           final int arg1,
+	                           final InetAddress arg2,
+	                           final int arg3) throws IOException {
 		// PRECONDITIONS
 		
 		try {
@@ -61,13 +83,13 @@ public class CachingSocketFactory extends SocketFactory {
 	
 	/*
 	 * (non-Javadoc)
-	 * @see javax.net.SocketFactory#createSocket(java.net.InetAddress, int, java.net.InetAddress, int)
+	 * @see javax.net.ssl.SSLSocketFactory#createSocket(java.net.Socket, java.lang.String, int, boolean)
 	 */
 	@Override
-	public Socket createSocket(final InetAddress address,
+	public Socket createSocket(final Socket s,
+	                           final String host,
 	                           final int port,
-	                           final InetAddress localAddress,
-	                           final int localPort) throws IOException {
+	                           final boolean autoClose) throws IOException {
 		// PRECONDITIONS
 		
 		try {
@@ -83,8 +105,27 @@ public class CachingSocketFactory extends SocketFactory {
 	 * @see javax.net.SocketFactory#createSocket(java.lang.String, int)
 	 */
 	@Override
-	public Socket createSocket(final String host,
-	                           final int port) throws IOException, UnknownHostException {
+	public Socket createSocket(final String arg0,
+	                           final int arg1) throws IOException, UnknownHostException {
+		// PRECONDITIONS
+		
+		try {
+			// TODO Auto-generated method stub
+			return new CachingSSLSocket();
+		} finally {
+			// POSTCONDITIONS
+		}
+	}
+	
+	/*
+	 * (non-Javadoc)
+	 * @see javax.net.SocketFactory#createSocket(java.lang.String, int, java.net.InetAddress, int)
+	 */
+	@Override
+	public Socket createSocket(final String arg0,
+	                           final int arg1,
+	                           final InetAddress arg2,
+	                           final int arg3) throws IOException, UnknownHostException {
 		// PRECONDITIONS
 		
 		try {
@@ -97,13 +138,10 @@ public class CachingSocketFactory extends SocketFactory {
 	
 	/*
 	 * (non-Javadoc)
-	 * @see javax.net.SocketFactory#createSocket(java.lang.String, int, java.net.InetAddress, int)
+	 * @see javax.net.ssl.SSLSocketFactory#getDefaultCipherSuites()
 	 */
 	@Override
-	public Socket createSocket(final String host,
-	                           final int port,
-	                           final InetAddress localHost,
-	                           final int localPort) throws IOException, UnknownHostException {
+	public String[] getDefaultCipherSuites() {
 		// PRECONDITIONS
 		
 		try {
@@ -114,38 +152,19 @@ public class CachingSocketFactory extends SocketFactory {
 		}
 	}
 	
-	/**
-	 * Gets the simple name of the class.
-	 * 
-	 * @return the simple name of the class.
+	/*
+	 * (non-Javadoc)
+	 * @see javax.net.ssl.SSLSocketFactory#getSupportedCipherSuites()
 	 */
-	public final String getHandle() {
+	@Override
+	public String[] getSupportedCipherSuites() {
 		// PRECONDITIONS
 		
-		final StringBuilder builder = new StringBuilder();
-		
 		try {
-			final LinkedList<Class<?>> list = new LinkedList<Class<?>>();
-			Class<?> clazz = getClass();
-			list.add(clazz);
-			
-			while ((clazz = clazz.getEnclosingClass()) != null) {
-				list.addFirst(clazz);
-			}
-			
-			for (final Class<?> c : list) {
-				if (builder.length() > 0) {
-					builder.append('.');
-				}
-				
-				builder.append(c.getSimpleName());
-			}
-			
-			return builder.toString();
+			// TODO Auto-generated method stub
+			return null;
 		} finally {
 			// POSTCONDITIONS
-			Condition.notNull(builder,
-			                  "Local variable '%s' in '%s:%s'.", "builder", getClass().getSimpleName(), "getHandle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		}
 	}
 }
