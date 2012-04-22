@@ -20,6 +20,7 @@ import java.util.LinkedList;
 import net.ownhero.dev.kanuni.annotations.file.WritableDirectory;
 import net.ownhero.dev.kanuni.annotations.simple.NotNull;
 import net.ownhero.dev.kanuni.conditions.Condition;
+import net.ownhero.dev.kisa.Logger;
 
 /**
  * @author Sascha Just <sascha.just@st.cs.uni-saarland.de>
@@ -27,7 +28,8 @@ import net.ownhero.dev.kanuni.conditions.Condition;
  */
 public class CachingSocketImplFactory implements SocketImplFactory {
 	
-	private File directory;
+	private final File   directory;
+	private final String handle;
 	
 	/**
 	 * 
@@ -36,10 +38,35 @@ public class CachingSocketImplFactory implements SocketImplFactory {
 		// PRECONDITIONS
 		
 		try {
-			System.err.println("initialized " + getHandle());
+			final StringBuilder builder = new StringBuilder();
+			
+			final LinkedList<Class<?>> list = new LinkedList<Class<?>>();
+			Class<?> clazz = getClass();
+			list.add(clazz);
+			
+			while ((clazz = clazz.getEnclosingClass()) != null) {
+				list.addFirst(clazz);
+			}
+			
+			for (final Class<?> c : list) {
+				if (builder.length() > 0) {
+					builder.append('.');
+				}
+				
+				builder.append(c.getSimpleName());
+			}
+			
+			this.handle = builder.toString();
+			
+			if (Logger.logTrace()) {
+				Logger.trace("Initialized '%s'.", getHandle());
+			}
+			
 			this.directory = directory;
 		} finally {
 			// POSTCONDITIONS
+			Condition.notNull(this.handle, "Field '%s' in '%s'.", "handle", getHandle()); //$NON-NLS-1$ //$NON-NLS-2$
+			Condition.notNull(this.directory, "Field '%s' in '%s'.", "directory", getHandle()); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 	}
 	
@@ -66,30 +93,10 @@ public class CachingSocketImplFactory implements SocketImplFactory {
 	public final String getHandle() {
 		// PRECONDITIONS
 		
-		final StringBuilder builder = new StringBuilder();
-		
 		try {
-			final LinkedList<Class<?>> list = new LinkedList<Class<?>>();
-			Class<?> clazz = getClass();
-			list.add(clazz);
-			
-			while ((clazz = clazz.getEnclosingClass()) != null) {
-				list.addFirst(clazz);
-			}
-			
-			for (final Class<?> c : list) {
-				if (builder.length() > 0) {
-					builder.append('.');
-				}
-				
-				builder.append(c.getSimpleName());
-			}
-			
-			return builder.toString();
+			return this.handle;
 		} finally {
 			// POSTCONDITIONS
-			Condition.notNull(builder,
-			                  "Local variable '%s' in '%s:%s'.", "builder", getClass().getSimpleName(), "getHandle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		}
 	}
 }

@@ -53,18 +53,21 @@ public class CachingTest {
 			s.connect(new InetSocketAddress("own-hero.net", 80));
 			final OutputStream outputStream = s.getOutputStream();
 			final PrintWriter writer = new PrintWriter(outputStream);
-			writer.println("GET / HTTP/1.1");
-			writer.println("Host: own-hero.net");
-			writer.println("Connection: Keep-Alive");
-			writer.println("User-Agent: CachingSocketClient/IODA-0.2");
-			writer.println();
+			writer.print("GET / HTTP/1.1\r\n");
+			writer.print("Host: own-hero.net\r\n");
+			writer.print("Connection: Keep-Alive\r\n");
+			writer.print("User-Agent: CachingSocketClient/IODA-0.2\r\n");
+			writer.print("\r\n");
 			writer.flush();
 			
 			final InputStream inputStream = s.getInputStream();
 			final InputStreamReader reader = new InputStreamReader(inputStream);
 			final char[] buffer = new char[1024];
 			while ((reader.read(buffer)) >= 0) {
-				System.err.println(buffer);
+				for (int i = 0; (i < buffer.length) && (buffer[i] != '\0'); ++i) {
+					System.err.print(buffer[i]);
+				}
+				System.err.println();
 			}
 			
 		} catch (final IOException e) {

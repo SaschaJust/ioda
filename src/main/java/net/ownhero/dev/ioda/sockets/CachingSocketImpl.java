@@ -20,8 +20,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
@@ -30,7 +28,6 @@ import java.net.SocketException;
 import java.net.SocketImpl;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -38,7 +35,6 @@ import java.util.Queue;
 
 import net.ownhero.dev.ioda.FileUtils;
 import net.ownhero.dev.ioda.IOUtils;
-import net.ownhero.dev.ioda.sockets.Delegator.DelegatorMethodFinder;
 import net.ownhero.dev.kanuni.annotations.file.WritableDirectory;
 import net.ownhero.dev.kanuni.annotations.simple.NotNull;
 import net.ownhero.dev.kanuni.conditions.Condition;
@@ -52,16 +48,36 @@ import net.ownhero.dev.regex.Regex;
  * 
  * @author Sascha Just <sascha.just@st.cs.uni-saarland.de>
  */
-public class CachingSocketImpl extends SocketImpl {
+public final class CachingSocketImpl extends InterceptableSocketImpl {
 	
 	/**
 	 * The Class CachedInputStream.
 	 */
 	private class CachedInputStream extends InputStream {
 		
+		/** The Constant BUFFER_SIZE. */
+		private static final int        BUFFER_SIZE   = 4096;
+		
+		/** The b list. */
+		private final Queue<ByteBuffer> bufferQueue   = new LinkedList<>();
+		
 		/** The buffer. */
-		private ByteBuffer              buffer = null;
-		private final Queue<ByteBuffer> bList  = new LinkedList<>();
+		private ByteBuffer              currentBuffer = null;
+		
+		/*
+		 * (non-Javadoc)
+		 * @see java.io.InputStream#available()
+		 */
+		@Override
+		public int available() throws IOException {
+			// PRECONDITIONS
+			
+			try {
+				return this.currentBuffer.position() + (this.bufferQueue.size() * BUFFER_SIZE);
+			} finally {
+				// POSTCONDITIONS
+			}
+		}
 		
 		/*
 		 * (non-Javadoc)
@@ -72,8 +88,8 @@ public class CachingSocketImpl extends SocketImpl {
 			// PRECONDITIONS
 			
 			try {
-				if (this.buffer == null) {
-					this.buffer = ByteBuffer.allocate(4096);
+				if (this.currentBuffer == null) {
+					this.currentBuffer = ByteBuffer.allocate(BUFFER_SIZE);
 					InputStream stream;
 					
 					if (doCache()) {
@@ -86,24 +102,43 @@ public class CachingSocketImpl extends SocketImpl {
 							Logger.trace("Target cache file is '%s'.", cacheFile);
 						}
 						
+						// check if cache file already exists
 						if (!cacheFile.exists()) {
-							if (!CachingSocketImpl.this.open && !CachingSocketImpl.this.closed) {
-								_connect(CachingSocketImpl.this.address, CachingSocketImpl.this.port);
+							// if not, fetch data with internal socket into the file
+							if (!CachingSocketImpl.this.opened && !CachingSocketImpl.this.closed) {
+								if (Logger.logTrace()) {
+									Logger.trace("Connecting internal socket.");
+								}
+								connectInternal(CachingSocketImpl.this.address, CachingSocketImpl.this.port);
+								CachingSocketImpl.this.opened = true;
 								
+								if (Logger.logTrace()) {
+									if (CachingSocketImpl.this.options.isEmpty()) {
+										Logger.trace("No options set for socket.");
+									} else {
+										Logger.trace("Setting options for socket:");
+									}
+								}
 								for (final Integer optID : CachingSocketImpl.this.options.keySet()) {
-									_setOption(optID, CachingSocketImpl.this.options.get(optID));
+									if (Logger.logTrace()) {
+										Logger.trace("- Option: '%s' -> '%s'", optID,
+										             CachingSocketImpl.this.options.get(optID));
+									}
+									setOptionInternal(optID, CachingSocketImpl.this.options.get(optID));
 								}
 							}
 							
-							final OutputStream ostream = _getOutputStream();
+							final OutputStream ostream = getOutputStreamInternal();
 							ostream.write(CachingSocketImpl.this.outputStream.getCache());
 							ostream.flush();
 							
-							final InputStream inputStream = _getInputStream();
+							final InputStream inputStream = getInputStreamInternal();
 							final OutputStream cacheStream = new FileOutputStream(cacheFile);
 							IOUtils.copyInputStream(inputStream, cacheStream);
+							cacheStream.close();
 						}
 						
+						// serve data from the cache file
 						stream = new FileInputStream(cacheFile);
 						
 					} else {
@@ -111,26 +146,35 @@ public class CachingSocketImpl extends SocketImpl {
 							Logger.trace("By-passing caching.");
 						}
 						
-						if (!CachingSocketImpl.this.open && !CachingSocketImpl.this.closed) {
+						if (!CachingSocketImpl.this.opened && !CachingSocketImpl.this.closed) {
 							if (Logger.logTrace()) {
 								Logger.trace("Connecting internal socket.");
 							}
-							_connect(CachingSocketImpl.this.address, CachingSocketImpl.this.port);
+							connectInternal(CachingSocketImpl.this.address, CachingSocketImpl.this.port);
+							CachingSocketImpl.this.opened = true;
 							
 							if (Logger.logTrace()) {
-								Logger.trace("Setting socket options.");
+								if (CachingSocketImpl.this.options.isEmpty()) {
+									Logger.trace("No options set for socket.");
+								} else {
+									Logger.trace("Setting options for socket:");
+								}
 							}
 							for (final Integer optID : CachingSocketImpl.this.options.keySet()) {
-								_setOption(optID, CachingSocketImpl.this.options.get(optID));
+								if (Logger.logTrace()) {
+									Logger.trace("- Option: '%s' -> '%s'", optID,
+									             CachingSocketImpl.this.options.get(optID));
+								}
+								setOptionInternal(optID, CachingSocketImpl.this.options.get(optID));
 							}
 						}
 						
-						final OutputStream ostream = _getOutputStream();
+						final OutputStream ostream = getOutputStreamInternal();
 						if (Logger.logTrace()) {
-							Logger.trace("Writing cached data to internal socket: '%s'",
+							Logger.trace("Writing buffered data to internal socket: '%s'",
 							             new String(CachingSocketImpl.this.outputStream.getCache()));
-							Logger.trace("Which is: %s",
-							             Arrays.toString(CachingSocketImpl.this.outputStream.getCache()));
+							Logger.trace("Byte representation of buffered data: %s",
+							             byteArrayToHexString(CachingSocketImpl.this.outputStream.getCache()));
 						}
 						ostream.write(CachingSocketImpl.this.outputStream.getCache());
 						ostream.flush();
@@ -138,42 +182,44 @@ public class CachingSocketImpl extends SocketImpl {
 						if (Logger.logTrace()) {
 							Logger.trace("InputStream data is taking from internal stream.");
 						}
-						stream = _getInputStream();
+						
+						stream = getInputStreamInternal();
 					}
 					
-					byte b;
+					byte currentByte;
 					if (Logger.logTrace()) {
-						Logger.trace("Reading estimated '%s' bytes into cache.", stream.available());
+						Logger.trace("Reading estimated '%s' bytes into buffer.", stream.available());
 					}
 					
-					while ((b = (byte) stream.read()) >= 0) {
-						if (this.buffer.hasRemaining()) {
-							this.buffer.put(b);
-						} else {
-							this.buffer.rewind();
-							this.bList.add(this.buffer);
-							this.buffer = ByteBuffer.allocate(4096);
+					while ((currentByte = (byte) stream.read()) >= 0) {
+						if (!this.currentBuffer.hasRemaining()) {
+							this.currentBuffer.rewind();
+							this.bufferQueue.add(this.currentBuffer);
+							this.currentBuffer = ByteBuffer.allocate(BUFFER_SIZE);
 						}
+						
+						this.currentBuffer.put(currentByte);
 					}
-					this.buffer.rewind();
+					
+					this.currentBuffer.rewind();
 					
 					if (Logger.logTrace()) {
 						final StringBuilder builder = new StringBuilder();
 						
-						for (final ByteBuffer theBuffer : this.bList) {
-							builder.append(Arrays.toString(theBuffer.array()));
+						for (final ByteBuffer theBuffer : this.bufferQueue) {
+							builder.append(byteArrayToHexString(theBuffer.array()));
 						}
 						
-						builder.append(this.buffer.array());
-						Logger.trace("Cache now has the following content: " + builder);
+						builder.append(byteArrayToHexString(this.currentBuffer.array()));
+						Logger.trace("Buffer now has the following content: " + builder);
 					}
 				}
 				
-				if (this.buffer.hasRemaining()) {
-					return this.buffer.get();
-				} else if (!this.bList.isEmpty()) {
-					this.buffer = this.bList.poll();
-					return this.buffer.get();
+				if (this.currentBuffer.hasRemaining()) {
+					return this.currentBuffer.get();
+				} else if (!this.bufferQueue.isEmpty()) {
+					this.currentBuffer = this.bufferQueue.poll();
+					return this.currentBuffer.get();
 				} else {
 					return -1;
 				}
@@ -189,14 +235,14 @@ public class CachingSocketImpl extends SocketImpl {
 	 */
 	private class CachedOutputStream extends OutputStream {
 		
-		/** The regex. */
+		/** The regex. FIXME: this is not sufficient. */
 		private final Regex                 regex  = new Regex("^GET\\s+({URL}https?://[^ ]+)$");
-		
-		/** The stream. */
-		private final ByteArrayOutputStream stream = new ByteArrayOutputStream();
 		
 		/** The request. */
 		private String                      request;
+		
+		/** The stream. */
+		private final ByteArrayOutputStream stream = new ByteArrayOutputStream();
 		
 		/**
 		 * Gets the cache.
@@ -213,6 +259,7 @@ public class CachingSocketImpl extends SocketImpl {
 		 * @return the request
 		 */
 		public String getRequest() {
+			// return the request if we found some HTTP/GET
 			return this.request;
 		}
 		
@@ -224,12 +271,14 @@ public class CachingSocketImpl extends SocketImpl {
 		public void write(final int b) throws IOException {
 			// PRECONDITIONS
 			if (Logger.logTrace()) {
-				Logger.trace("Writing to output cache: '0x%s'", (b < 16
-				                                                       ? '0'
-				                                                       : "") + Integer.toHexString(b));
+				Logger.trace("Writing to output buffer: '0x%s'", (b < 16
+				                                                        ? '0'
+				                                                        : "") + Integer.toHexString(b));
 			}
 			
 			try {
+				// TODO we can further improve socket behavior if we do some heuristics on the requests and directly
+				// by-pass caching at all and relay all calls directly to the underlying socket implementation.
 				if ((char) b == '\n') {
 					final Match match = this.regex.find(this.stream.toString());
 					if (match != null) {
@@ -243,35 +292,23 @@ public class CachingSocketImpl extends SocketImpl {
 		}
 	}
 	
+	/** The closed. */
+	private boolean                    closed       = false;
+	
 	/** The directory. */
 	private File                       directory;
 	
+	/** The input stream. */
+	private final CachedInputStream    inputStream  = new CachedInputStream();
+	
 	/** The open. */
-	private boolean                    open         = false;
-	
-	/** The output stream. */
-	private final CachedOutputStream   outputStream = new CachedOutputStream();
-	
-	/** The is server. */
-	private boolean                    isServer     = false;
-	
-	/** The delegator. */
-	private Delegator                  delegator;
+	private boolean                    opened       = false;
 	
 	/** The options. */
 	private final Map<Integer, Object> options      = new HashMap<>();
 	
-	/** The input stream. */
-	private final InputStream          inputStream  = new CachedInputStream();
-	
-	/** The closed. */
-	private boolean                    closed       = false;
-	
-	/** The internal socket (instance of SocksSocketImpl). */
-	private Object                     internalSocket;
-	
-	/** The method setOption of SocksSocketImpl inherited from AbstractPlainSocketImpl. */
-	private Method                     theSetOption;
+	/** The output stream. */
+	private final CachedOutputStream   outputStream = new CachedOutputStream();
 	
 	/**
 	 * Instantiates a new caching socket impl.
@@ -281,130 +318,12 @@ public class CachingSocketImpl extends SocketImpl {
 	 */
 	public CachingSocketImpl(final @NotNull @WritableDirectory File directory) {
 		// PRECONDITIONS
-		if (Logger.logTrace()) {
-			Logger.trace("Instantiating '%s'.", getHandle());
-		}
 		
 		try {
-			this.delegator = new Delegator(this, SocketImpl.class, "java.net.SocksSocketImpl");
-			this.internalSocket = this.delegator.getObject();
-			
-			try {
-				final Class<?> forName = Class.forName("java.net.AbstractPlainSocketImpl");
-				this.theSetOption = forName.getMethod("setOption", int.class, Object.class);
-				this.theSetOption.setAccessible(true);
-			} catch (ClassNotFoundException | NoSuchMethodException | SecurityException e) {
-				if (Logger.logWarn()) {
-					Logger.warn(e);
-				}
-			}
 			this.directory = directory;
 		} finally {
 			// POSTCONDITIONS
 			Condition.notNull(this.directory, "Field '%s' in '%s'.", "directory", getHandle()); //$NON-NLS-1$ //$NON-NLS-2$
-		}
-	}
-	
-	/**
-	 * _connect.
-	 * 
-	 * @param address
-	 *            the address
-	 * @param port
-	 *            the port
-	 * @throws IOException
-	 *             Signals that an I/O exception has occurred.
-	 */
-	private void _connect(final InetAddress address,
-	                      final int port) throws IOException {
-		// PRECONDITIONS
-		if (Logger.logTrace()) {
-			Logger.trace("[INTERNAL] Delegated call to method '%s:%s' to internal socket [SocksSocketImpl] with options '%s', '%s'.",
-			             getHandle(), "connect", address, port);
-		}
-		
-		try {
-			try {
-				this.delegator.delegateTo("connect", InetAddress.class, int.class).invoke(address, port);
-				this.open = true;
-			} catch (final Exception e) {
-				throw new DelegationException(e);
-			}
-		} finally {
-			// POSTCONDITIONS
-		}
-	}
-	
-	/**
-	 * _get input stream.
-	 * 
-	 * @return the input stream
-	 */
-	private InputStream _getInputStream() {
-		// PRECONDITIONS
-		if (Logger.logTrace()) {
-			Logger.trace("[INTERNAL] Delegated call to method '%s:%s' to internal socket [SocksSocketImpl].",
-			             getHandle(), "getInputStream");
-		}
-		
-		try {
-			try {
-				return this.delegator.delegateTo("getInputStream").<InputStream> invoke();
-			} catch (final Exception e) {
-				throw new DelegationException(e);
-			}
-		} finally {
-			// POSTCONDITIONS
-		}
-	}
-	
-	/**
-	 * _get output stream.
-	 * 
-	 * @return the output stream
-	 */
-	private OutputStream _getOutputStream() {
-		// PRECONDITIONS
-		if (Logger.logTrace()) {
-			Logger.trace("[INTERNAL] Delegated call to method '%s:%s' to internal socket [SocksSocketImpl].",
-			             getHandle(), "getOutputStream");
-		}
-		
-		try {
-			try {
-				return this.delegator.delegateTo("getOutputStream").<OutputStream> invoke();
-			} catch (final Exception e) {
-				throw new DelegationException(e);
-			}
-		} finally {
-			// POSTCONDITIONS
-		}
-	}
-	
-	/**
-	 * _set otion.
-	 * 
-	 * @param optID
-	 *            the opt id
-	 * @param value
-	 *            the value
-	 */
-	private void _setOption(final int optID,
-	                        final Object value) {
-		// PRECONDITIONS
-		if (Logger.logTrace()) {
-			Logger.trace("[INTERNAL] Delegated call to method '%s:%s' to internal socket [SocksSocketImpl] with options '%s', '%s'.",
-			             getHandle(), "setOption", optID, value);
-		}
-		
-		try {
-			try {
-				this.theSetOption.invoke(this.internalSocket, optID, value);
-			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				throw new DelegationException(e);
-			}
-		} finally {
-			// POSTCONDITIONS
 		}
 	}
 	
@@ -413,20 +332,14 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#accept(java.net.SocketImpl)
 	 */
 	@Override
-	protected void accept(final SocketImpl s) throws IOException {
+	public void accept(final SocketImpl s) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with argument '%s'.", getHandle(), "accept", s);
 		}
 		
 		try {
-			if (this.isServer) {
-				this.delegator.invoke(s);
-				final DelegatorMethodFinder delegateTo = this.delegator.delegateTo("accept", SocketImpl.class);
-				delegateTo.invoke(s);
-			} else {
-				throw new UnsupportedOperationException();
-			}
+			acceptInternal(s);
 		} finally {
 			// POSTCONDITIONS
 		}
@@ -437,18 +350,17 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#available()
 	 */
 	@Override
-	protected int available() throws IOException {
+	public int available() throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s'.", getHandle(), "available");
 		}
 		
 		try {
-			if (this.open) {
-				return this.delegator.<Integer> invoke();
+			if (this.opened) {
+				return availableInternal();
 			} else {
-				// TODO this could be wrong
-				return 0;
+				return this.inputStream.available();
 			}
 		} finally {
 			// POSTCONDITIONS
@@ -460,20 +372,38 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#bind(java.net.InetAddress, int)
 	 */
 	@Override
-	protected void bind(final InetAddress host,
-	                    final int port) throws IOException {
+	public void bind(final InetAddress host,
+	                 final int port) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s', '%s'.", getHandle(), "bind", host, port);
 		}
 		
 		try {
-			this.isServer = true;
-			this.delegator.invoke(host, port);
-			this.open = true;
+			bindInternal(host, port);
+			this.opened = true;
 		} finally {
 			// POSTCONDITIONS
 		}
+	}
+	
+	/**
+	 * Byte array to hex string.
+	 * 
+	 * @param array
+	 *            the array
+	 * @return the string
+	 */
+	private String byteArrayToHexString(final byte[] array) {
+		final StringBuilder builder = new StringBuilder();
+		
+		for (final byte b : array) {
+			builder.append("0x").append((b < 16
+			                                   ? '0'
+			                                   : "")).append(Integer.toHexString(b)).append(' ');
+		}
+		
+		return builder.toString();
 	}
 	
 	/*
@@ -481,16 +411,16 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#close()
 	 */
 	@Override
-	protected void close() throws IOException {
+	public void close() throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s'.", getHandle(), "close");
 		}
 		
 		try {
-			if (this.open || this.isServer) {
-				this.delegator.invoke();
-				this.open = false;
+			if (this.opened) {
+				closeInternal();
+				this.opened = false;
 				this.closed = true;
 			}
 		} finally {
@@ -503,14 +433,18 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#connect(java.net.InetAddress, int)
 	 */
 	@Override
-	protected void connect(final InetAddress address,
-	                       final int port) throws IOException {
+	public void connect(final InetAddress address,
+	                    final int port) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s', '%s'.", getHandle(), "connect", address, port);
 		}
 		
 		try {
+			// only save connect options, but DO NOT CONNECT here
+			// we have to decide if we want/have to connect later on as soon as people try to read from the input
+			// stream.
+			
 			this.address = address;
 			this.port = port;
 		} finally {
@@ -524,14 +458,18 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#connect(java.net.SocketAddress, int)
 	 */
 	@Override
-	protected void connect(final SocketAddress address,
-	                       final int timeout) throws IOException {
+	public void connect(final SocketAddress address,
+	                    final int timeout) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s', '%s'.", getHandle(), "connect", address, timeout);
 		}
 		
 		try {
+			// only save connect options, but DO NOT CONNECT here
+			// we have to decide if we want/have to connect later on as soon as people try to read from the input
+			// stream.
+			
 			final InetSocketAddress isa = (InetSocketAddress) address;
 			connect(isa.getAddress(), isa.getPort());
 		} finally {
@@ -544,14 +482,18 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#connect(java.lang.String, int)
 	 */
 	@Override
-	protected void connect(final String host,
-	                       final int port) throws IOException {
+	public void connect(final String host,
+	                    final int port) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s', '%s'.", getHandle(), "connect", host, port);
 		}
 		
 		try {
+			// only save connect options, but DO NOT CONNECT here
+			// we have to decide if we want/have to connect later on as soon as people try to read from the input
+			// stream.
+			
 			this.address = InetAddress.getByName(host);
 			this.port = port;
 		} finally {
@@ -564,21 +506,23 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#create(boolean)
 	 */
 	@Override
-	protected void create(final boolean stream) throws IOException {
+	public void create(final boolean stream) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s'.", getHandle(), "create", stream);
 		}
 		
 		try {
-			this.delegator.invoke(stream);
+			// just delegate to the internal socket
+			createInternal(stream);
 		} finally {
 			// POSTCONDITIONS
 		}
 	}
 	
 	/**
-	 * Do cache.
+	 * Determines if we should use caching or by-pass the caching mechanism. This solely depends on the fact that we saw
+	 * some HTTP GET request beforehand.
 	 * 
 	 * @return true, if successful
 	 */
@@ -586,58 +530,20 @@ public class CachingSocketImpl extends SocketImpl {
 		return this.outputStream.getRequest() != null;
 	}
 	
-	/**
-	 * Gets the simple name of the class.
-	 * 
-	 * @return the simple name of the class.
-	 */
-	public final String getHandle() {
-		// PRECONDITIONS
-		
-		final StringBuilder builder = new StringBuilder();
-		
-		try {
-			final LinkedList<Class<?>> list = new LinkedList<Class<?>>();
-			Class<?> clazz = getClass();
-			list.add(clazz);
-			
-			while ((clazz = clazz.getEnclosingClass()) != null) {
-				list.addFirst(clazz);
-			}
-			
-			for (final Class<?> c : list) {
-				if (builder.length() > 0) {
-					builder.append('.');
-				}
-				
-				builder.append(c.getSimpleName());
-			}
-			
-			return builder.toString();
-		} finally {
-			// POSTCONDITIONS
-			Condition.notNull(builder,
-			                  "Local variable '%s' in '%s:%s'.", "builder", getClass().getSimpleName(), "getHandle"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		}
-	}
-	
 	/*
 	 * (non-Javadoc)
 	 * @see java.net.SocketImpl#getInputStream()
 	 */
 	@Override
-	protected InputStream getInputStream() throws IOException {
+	public InputStream getInputStream() throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s'.", getHandle(), "getInputStream");
 		}
 		
 		try {
-			if (this.isServer) {
-				return this.delegator.<InputStream> invoke();
-			} else {
-				return this.inputStream;
-			}
+			// hand out our own CachingInputStream
+			return this.inputStream;
 		} finally {
 			// POSTCONDITIONS
 		}
@@ -655,7 +561,14 @@ public class CachingSocketImpl extends SocketImpl {
 		}
 		
 		try {
-			return this.delegator.<InputStream> invoke(optID);
+			// check if the internal socket implementation is active
+			if (this.opened) {
+				// return the options used in the active connection
+				return getOptionInternal(optID);
+			} else {
+				// return the options saved to be used after connecting the socket
+				return this.options.get(optID);
+			}
 		} finally {
 			// POSTCONDITIONS
 		}
@@ -666,54 +579,57 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#getOutputStream()
 	 */
 	@Override
-	protected OutputStream getOutputStream() throws IOException {
+	public OutputStream getOutputStream() throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s'.", getHandle(), "getOutputStream");
 		}
 		
 		try {
-			if (this.isServer) {
-				return this.delegator.<OutputStream> invoke();
-			} else {
-				return this.outputStream;
-			}
+			// hand out our own CachingOutputStream
+			return this.outputStream;
 		} finally {
 			// POSTCONDITIONS
 		}
 	}
 	
 	/**
-	 * Gets the target file.
+	 * Computes the target cache file from a given URL.
 	 * 
 	 * @param request
 	 *            the request
 	 * @return the target file
-	 * @throws MalformedURLException
+	 * @throws IOException
 	 */
-	private File getTargetFile(final String request) throws MalformedURLException {
+	private File getTargetFile(final String request) throws IOException {
 		final Regex regex = new Regex("https?://({hostname}[^/]+)({remainder}.*)?");
 		final Match match = regex.find(request);
 		final Group hostnameGroup = match.getGroup("hostname");
 		final String hostname = hostnameGroup.getMatch();
 		final Group remainderGroup = match.getGroup("remainder");
+		
 		String remainder = "";
 		if (remainderGroup != null) {
 			remainder = remainderGroup.getMatch();
 		}
 		
+		// base dir for the cache. Solely depends on the hostname under suspect
 		final File targetDir = new File(this.directory.getAbsolutePath() + FileUtils.fileSeparator + hostname);
+		
+		// try to make target directory ready for writing
 		if (targetDir.exists()) {
 			if (!targetDir.isDirectory()) {
-				throw new RuntimeException(targetDir.getAbsolutePath() + " is not a directory.");
+				throw new IOException(targetDir.getAbsolutePath() + " is not a directory.");
 			}
 		} else {
 			if (!targetDir.mkdir()) {
-				throw new RuntimeException("Could not create directory '" + targetDir.getAbsolutePath() + "'.");
+				throw new IOException("Could not create directory '" + targetDir.getAbsolutePath() + "'.");
 			}
 		}
 		
 		try {
+			// compose target file with abolsute path of the base dir + file separator + hostname (+ '_' + escaped
+			// remainder of the url)
 			final File target = new File(targetDir.getAbsolutePath() + FileUtils.fileSeparator + hostname
 			        + (remainder.isEmpty()
 			                              ? ""
@@ -740,15 +656,15 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#listen(int)
 	 */
 	@Override
-	protected void listen(final int backlog) throws IOException {
+	public void listen(final int backlog) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s'.", getHandle(), "listen", backlog);
 		}
 		
 		try {
-			this.isServer = true;
-			this.delegator.invoke(backlog);
+			// relay to the internal socket implementation
+			listenInternal(backlog);
 		} finally {
 			// POSTCONDITIONS
 		}
@@ -759,18 +675,20 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#sendUrgentData(int)
 	 */
 	@Override
-	protected void sendUrgentData(final int data) throws IOException {
+	public void sendUrgentData(final int data) throws IOException {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s' with options '%s'.", getHandle(), "sendUrgentData", data);
 		}
 		
 		try {
-			if (this.isServer) {
-				this.delegator.invoke(data);
-			} else {
-				throw new UnsupportedOperationException();
-			}
+			// Caching sockets do not support sending of urgent data (which should be checked with 'supportsUrgentData'
+			// beforehand).
+			// We encapsulate an UnsupportedOperationException within an IOException to be conform with the declared
+			// exceptions of the interface.
+			throw new IOException(
+			                      new UnsupportedOperationException(
+			                                                        "Sending urgent data is not supported on caching sockets."));
 		} finally {
 			// POSTCONDITIONS
 		}
@@ -789,8 +707,10 @@ public class CachingSocketImpl extends SocketImpl {
 		}
 		
 		try {
-			if (this.open) {
-				_setOption(optID, value);
+			// set options directly on the internal socket implementation if the socket is already active.
+			// otherwise save the options to be applied later on
+			if (this.opened) {
+				setOptionInternal(optID, value);
 			} else {
 				this.options.put(optID, value);
 			}
@@ -804,18 +724,15 @@ public class CachingSocketImpl extends SocketImpl {
 	 * @see java.net.SocketImpl#supportsUrgentData()
 	 */
 	@Override
-	protected boolean supportsUrgentData() {
+	public boolean supportsUrgentData() {
 		// PRECONDITIONS
 		if (Logger.logTrace()) {
 			Logger.trace("Called method '%s:%s'.", getHandle(), "supportedUrgentData");
 		}
 		
 		try {
-			if (this.isServer) {
-				return this.delegator.invoke();
-			} else {
-				throw new UnsupportedOperationException();
-			}
+			// caching sockets do not support urgent data.
+			return false;
 		} finally {
 			// POSTCONDITIONS
 		}
