@@ -12,12 +12,13 @@
  ******************************************************************************/
 package net.ownhero.dev.ioda.caching;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
@@ -41,9 +42,11 @@ import org.junit.Test;
  */
 public class CachingTest {
 	
+	private static File dir;
+	
 	@BeforeClass
 	public static void beforeClass() {
-		final File dir = FileUtils.createRandomDir("CACHE", "TEST", FileShutdownAction.DELETE);
+		dir = FileUtils.createRandomDir("CACHE", "TEST", FileShutdownAction.DELETE);
 		SocketUtils.enableCaching(dir);
 	}
 	
@@ -61,15 +64,12 @@ public class CachingTest {
 			writer.flush();
 			
 			final InputStream inputStream = s.getInputStream();
-			final InputStreamReader reader = new InputStreamReader(inputStream);
-			final char[] buffer = new char[1024];
-			while ((reader.read(buffer)) >= 0) {
-				for (int i = 0; (i < buffer.length) && (buffer[i] != '\0'); ++i) {
-					System.err.print(buffer[i]);
-				}
-				System.err.println();
-			}
+			final ByteArrayOutputStream result = new ByteArrayOutputStream();
+			IOUtils.copyInputStream(inputStream, result);
+			System.err.println(result.toString());
 			
+			assertTrue(new File(dir.getAbsolutePath() + FileUtils.fileSeparator + "own-hero.net"
+			        + FileUtils.fileSeparator + "own-hero.net").exists());
 		} catch (final IOException e) {
 			fail(e.getMessage());
 		}
@@ -85,13 +85,11 @@ public class CachingTest {
 			writer.flush();
 			
 			final InputStream inputStream = s.getInputStream();
-			final InputStreamReader reader = new InputStreamReader(inputStream);
-			final char[] buffer = new char[1024];
-			System.err.println("Result: ");
-			while ((reader.read(buffer)) >= 0) {
-				System.err.println(buffer);
-			}
-			
+			final ByteArrayOutputStream result = new ByteArrayOutputStream();
+			IOUtils.copyInputStream(inputStream, result);
+			System.err.println(result.toString());
+			assertTrue(new File(dir.getAbsolutePath() + FileUtils.fileSeparator + "www.google.de"
+			        + FileUtils.fileSeparator + "www.google.de").exists());
 		} catch (final IOException e) {
 			fail(e.getMessage());
 		}

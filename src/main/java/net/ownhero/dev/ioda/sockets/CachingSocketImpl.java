@@ -244,6 +244,10 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 		private final Regex                 hostRegex       = new Regex("^Host: ({hostname}.*)$",
 		                                                                Pattern.CASE_INSENSITIVE);
 		
+		private final Regex                 addressRegex    = new Regex(
+		                                                                "^GET https?://({hostname}[^/ ]+)({remainder}/[^ ]*)",
+		                                                                Pattern.CASE_INSENSITIVE);
+		
 		/** The stream. */
 		private final ByteArrayOutputStream stream          = new ByteArrayOutputStream();
 		
@@ -301,16 +305,27 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 						final Match match = this.getRequestRegex.find(this.line.toString());
 						if (match != null) {
 							this.remainder = match.getGroup("remainder").getMatch();
+						} else {
+							final Match match2 = this.addressRegex.find(this.line.toString());
+							if (match2 != null) {
+								this.hostname = match2.getGroup("hostname").getMatch();
+								if (match2.hasNamedGroup("remainder")) {
+									this.remainder = match2.getGroup("remainder").getMatch();
+								} else {
+									this.remainder = "";
+								}
+							}
 						}
 					} else {
 						final Match match = this.hostRegex.find(this.line.toString());
 						if (match != null) {
 							this.hostname = match.getGroup("hostname").getMatch();
 						}
-						
 					}
+					
 					this.line.reset();
 				}
+				
 				this.stream.write(b);
 				this.line.write(b);
 			} finally {
@@ -659,9 +674,9 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 			// compose target file with abolsute path of the base dir + file separator + hostname (+ '_' + escaped
 			// remainder of the url)
 			final File target = new File(targetDir.getAbsolutePath() + FileUtils.fileSeparator + hostname
-			        + (remainder.isEmpty()
-			                              ? ""
-			                              : "_" + URLEncoder.encode(remainder.substring(1), "ASCII")));
+			        + (remainder.length() < 2
+			                                 ? ""
+			                                 : "_" + URLEncoder.encode(remainder.substring(1), "ASCII")));
 			
 			if (Logger.logTrace()) {
 				Logger.trace(String.format("Computing cache file for request '%s' to be '%s'.", request,
