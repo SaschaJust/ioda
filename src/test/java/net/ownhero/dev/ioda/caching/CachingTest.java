@@ -21,7 +21,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -33,6 +32,7 @@ import net.ownhero.dev.ioda.SocketUtils;
 import net.ownhero.dev.ioda.exceptions.FetchException;
 
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -43,7 +43,7 @@ public class CachingTest {
 	
 	@BeforeClass
 	public static void beforeClass() {
-		final File dir = FileUtils.createRandomDir("CACHE", "TEST", FileShutdownAction.KEEP);
+		final File dir = FileUtils.createRandomDir("CACHE", "TEST", FileShutdownAction.DELETE);
 		SocketUtils.enableCaching(dir);
 	}
 	
@@ -107,6 +107,7 @@ public class CachingTest {
 	}
 	
 	@Test
+	@Ignore
 	public void httpNetCat() {
 		try {
 			IOUtils.fetchHttp(new URI("http://localhost"));
@@ -115,13 +116,4 @@ public class CachingTest {
 		}
 	}
 	
-	@Test
-	public void serverSocket() {
-		try (ServerSocket s = new ServerSocket()) {
-			s.bind(new InetSocketAddress("localhost", 2385));
-			s.close();
-		} catch (final IOException e) {
-			fail(e.getMessage());
-		}
-	}
 }

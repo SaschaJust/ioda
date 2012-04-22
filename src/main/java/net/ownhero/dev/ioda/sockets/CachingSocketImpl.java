@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
+import java.util.regex.Pattern;
 
 import net.ownhero.dev.ioda.FileUtils;
 import net.ownhero.dev.ioda.IOUtils;
@@ -235,14 +236,25 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 	 */
 	private class CachedOutputStream extends OutputStream {
 		
-		/** The regex. FIXME: this is not sufficient. */
-		private final Regex                 regex  = new Regex("^GET\\s+({URL}https?://[^ ]+)$");
+		/** The get request regex. */
+		private final Regex                 getRequestRegex = new Regex("^GET ({remainder}.*) HTTP",
+		                                                                Pattern.CASE_INSENSITIVE);
 		
-		/** The request. */
-		private String                      request;
+		/** The host regex. */
+		private final Regex                 hostRegex       = new Regex("^Host: ({hostname}.*)$",
+		                                                                Pattern.CASE_INSENSITIVE);
 		
 		/** The stream. */
-		private final ByteArrayOutputStream stream = new ByteArrayOutputStream();
+		private final ByteArrayOutputStream stream          = new ByteArrayOutputStream();
+		
+		/** The line. */
+		private final ByteArrayOutputStream line            = new ByteArrayOutputStream();
+		
+		/** The remainder. */
+		private String                      remainder       = null;
+		
+		/** The hostname. */
+		private String                      hostname        = null;
 		
 		/**
 		 * Gets the cache.
@@ -260,7 +272,12 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 		 */
 		public String getRequest() {
 			// return the request if we found some HTTP/GET
-			return this.request;
+			if ((this.remainder != null) && (this.hostname != null)) {
+				return String.format("http://%1$s%2$s", this.hostname, this.remainder);
+			} else {
+				return null;
+			}
+			
 		}
 		
 		/*
@@ -280,12 +297,22 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 				// TODO we can further improve socket behavior if we do some heuristics on the requests and directly
 				// by-pass caching at all and relay all calls directly to the underlying socket implementation.
 				if ((char) b == '\n') {
-					final Match match = this.regex.find(this.stream.toString());
-					if (match != null) {
-						this.request = match.getGroup("URL").getMatch();
+					if (this.remainder == null) {
+						final Match match = this.getRequestRegex.find(this.line.toString());
+						if (match != null) {
+							this.remainder = match.getGroup("remainder").getMatch();
+						}
+					} else {
+						final Match match = this.hostRegex.find(this.line.toString());
+						if (match != null) {
+							this.hostname = match.getGroup("hostname").getMatch();
+						}
+						
 					}
+					this.line.reset();
 				}
 				this.stream.write(b);
+				this.line.write(b);
 			} finally {
 				// POSTCONDITIONS
 			}
@@ -600,6 +627,7 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 	 *            the request
 	 * @return the target file
 	 * @throws IOException
+	 *             Signals that an I/O exception has occurred.
 	 */
 	private File getTargetFile(final String request) throws IOException {
 		final Regex regex = new Regex("https?://({hostname}[^/]+)({remainder}.*)?");
