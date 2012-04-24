@@ -15,6 +15,7 @@ package net.ownhero.dev.ioda.sockets;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,15 +28,11 @@ import java.net.SocketAddress;
 import java.net.SocketException;
 import java.net.SocketImpl;
 import java.net.URLEncoder;
-import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
 import java.util.regex.Pattern;
 
 import net.ownhero.dev.ioda.FileUtils;
-import net.ownhero.dev.ioda.IOUtils;
 import net.ownhero.dev.kanuni.annotations.file.WritableDirectory;
 import net.ownhero.dev.kanuni.annotations.simple.NotNull;
 import net.ownhero.dev.kanuni.conditions.Condition;
@@ -51,19 +48,57 @@ import net.ownhero.dev.regex.Regex;
  */
 public final class CachingSocketImpl extends InterceptableSocketImpl {
 	
+	private class CachedFileInputStream extends InputStream {
+		
+		private InputStream  input;
+		private OutputStream output;
+		
+		/**
+		 * @param file
+		 * @throws FileNotFoundException
+		 */
+		public CachedFileInputStream(final InputStream input, final OutputStream output) throws FileNotFoundException {
+			super();
+			// PRECONDITIONS
+			
+			try {
+				this.input = input;
+				this.output = output;
+			} finally {
+				// POSTCONDITIONS
+			}
+		}
+		
+		/*
+		 * (non-Javadoc)
+		 * @see java.io.FileInputStream#read()
+		 */
+		@Override
+		public int read() throws IOException {
+			// PRECONDITIONS
+			
+			try {
+				final int i = this.input.read();
+				this.output.write(i);
+				return i;
+			} finally {
+				// POSTCONDITIONS
+			}
+		}
+	}
+	
 	/**
 	 * The Class CachedInputStream.
 	 */
 	private class CachedInputStream extends InputStream {
 		
-		/** The Constant BUFFER_SIZE. */
-		private static final int        BUFFER_SIZE   = 4096;
-		
 		/** The b list. */
-		private final Queue<ByteBuffer> bufferQueue   = new LinkedList<>();
+		// private final Queue<ByteBuffer> bufferQueue = new LinkedList<>();
 		
 		/** The buffer. */
-		private ByteBuffer              currentBuffer = null;
+		// private ByteBuffer currentBuffer = null;
+		
+		private InputStream stream;
 		
 		/*
 		 * (non-Javadoc)
@@ -74,7 +109,8 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 			// PRECONDITIONS
 			
 			try {
-				return this.currentBuffer.position() + (this.bufferQueue.size() * BUFFER_SIZE);
+				// return this.currentBuffer.position() + (this.bufferQueue.size() * BUFFER_SIZE);
+				return this.stream.available();
 			} finally {
 				// POSTCONDITIONS
 			}
@@ -89,9 +125,10 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 			// PRECONDITIONS
 			
 			try {
-				if (this.currentBuffer == null) {
-					this.currentBuffer = ByteBuffer.allocate(BUFFER_SIZE);
-					InputStream stream;
+				if (this.stream == null) {
+					// this.currentBuffer = ByteBuffer.allocate(BUFFER_SIZE);
+					// InputStream stream;
+					final byte[] outputCache = CachingSocketImpl.this.outputStream.getCache();
 					
 					if (doCache()) {
 						final String request = CachingSocketImpl.this.outputStream.getRequest();
@@ -129,18 +166,25 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 								}
 							}
 							
+							if (Logger.logTrace()) {
+								Logger.trace("Sending cached output data: " + byteArrayToHexString(outputCache));
+							}
 							final OutputStream ostream = getOutputStreamInternal();
-							ostream.write(CachingSocketImpl.this.outputStream.getCache());
+							ostream.write(outputCache);
 							ostream.flush();
 							
 							final InputStream inputStream = getInputStreamInternal();
+							
+							if (Logger.logTrace()) {
+								Logger.trace("Creating FileOutputStream from cache-file: '%s'",
+								             cacheFile.getAbsolutePath());
+							}
 							final OutputStream cacheStream = new FileOutputStream(cacheFile);
-							IOUtils.copyInputStream(inputStream, cacheStream);
-							cacheStream.close();
+							this.stream = new CachedFileInputStream(inputStream, cacheStream);
+						} else {
+							// serve data from the cache file
+							this.stream = new FileInputStream(cacheFile);
 						}
-						
-						// serve data from the cache file
-						stream = new FileInputStream(cacheFile);
 						
 					} else {
 						if (Logger.logTrace()) {
@@ -171,59 +215,55 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 						}
 						
 						final OutputStream ostream = getOutputStreamInternal();
+						
 						if (Logger.logTrace()) {
-							Logger.trace("Writing buffered data to internal socket: '%s'",
-							             new String(CachingSocketImpl.this.outputStream.getCache()));
+							Logger.trace("Writing buffered data to internal socket: '%s'", outputCache);
 							Logger.trace("Byte representation of buffered data: %s",
 							             byteArrayToHexString(CachingSocketImpl.this.outputStream.getCache()));
 						}
-						ostream.write(CachingSocketImpl.this.outputStream.getCache());
+						ostream.write(outputCache);
 						ostream.flush();
 						
 						if (Logger.logTrace()) {
 							Logger.trace("InputStream data is taking from internal stream.");
 						}
 						
-						stream = getInputStreamInternal();
+						this.stream = getInputStreamInternal();
 					}
 					
-					byte currentByte;
-					if (Logger.logTrace()) {
-						Logger.trace("Reading estimated '%s' bytes into buffer.", stream.available());
-					}
-					
-					while ((currentByte = (byte) stream.read()) >= 0) {
-						if (!this.currentBuffer.hasRemaining()) {
-							this.currentBuffer.rewind();
-							this.bufferQueue.add(this.currentBuffer);
-							this.currentBuffer = ByteBuffer.allocate(BUFFER_SIZE);
-						}
-						
-						this.currentBuffer.put(currentByte);
-					}
-					
-					this.currentBuffer.rewind();
-					
-					if (Logger.logTrace()) {
-						final StringBuilder builder = new StringBuilder();
-						
-						for (final ByteBuffer theBuffer : this.bufferQueue) {
-							builder.append(byteArrayToHexString(theBuffer.array()));
-						}
-						
-						builder.append(byteArrayToHexString(this.currentBuffer.array()));
-						Logger.trace("Buffer now has the following content: " + builder);
-					}
+					// byte currentByte;
+					// if (Logger.logTrace()) {
+					// Logger.trace("Reading estimated '%s' bytes into buffer.", stream.available());
+					// }
+					//
+					// while ((currentByte = (byte) stream.read()) >= 0) {
+					// if (!this.currentBuffer.hasRemaining()) {
+					// this.currentBuffer.rewind();
+					// this.bufferQueue.add(this.currentBuffer);
+					// this.currentBuffer = ByteBuffer.allocate(BUFFER_SIZE);
+					// }
+					//
+					// this.currentBuffer.put(currentByte);
+					// }
+					//
+					// this.currentBuffer.rewind();
+					//
+					// if (Logger.logTrace()) {
+					// final StringBuilder builder = new StringBuilder();
+					//
+					// for (final ByteBuffer theBuffer : this.bufferQueue) {
+					// builder.append(byteArrayToHexString(theBuffer.array()));
+					// }
+					//
+					// builder.append(byteArrayToHexString(this.currentBuffer.array()));
+					// Logger.trace("Buffer now has the following content: " + builder);
+					// }
 				}
 				
-				if (this.currentBuffer.hasRemaining()) {
-					return this.currentBuffer.get();
-				} else if (!this.bufferQueue.isEmpty()) {
-					this.currentBuffer = this.bufferQueue.poll();
-					return this.currentBuffer.get();
-				} else {
-					return -1;
+				if (Logger.logTrace()) {
+					Logger.trace("Reading one byte.");
 				}
+				return this.stream.read();
 				
 			} finally {
 				// POSTCONDITIONS
@@ -266,7 +306,9 @@ public final class CachingSocketImpl extends InterceptableSocketImpl {
 		 * @return the cache
 		 */
 		public byte[] getCache() {
-			return this.stream.toByteArray();
+			final byte[] ret = this.stream.toByteArray();
+			this.stream.reset();
+			return ret;
 		}
 		
 		/**

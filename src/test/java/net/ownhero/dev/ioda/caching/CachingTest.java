@@ -58,16 +58,18 @@ public class CachingTest {
 			final PrintWriter writer = new PrintWriter(outputStream);
 			writer.print("GET / HTTP/1.1\r\n");
 			writer.print("Host: own-hero.net\r\n");
-			writer.print("Connection: Keep-Alive\r\n");
+			writer.print("Connection: Close\r\n");
 			writer.print("User-Agent: CachingSocketClient/IODA-0.2\r\n");
 			writer.print("\r\n");
 			writer.flush();
 			
 			final InputStream inputStream = s.getInputStream();
-			final ByteArrayOutputStream result = new ByteArrayOutputStream();
-			IOUtils.copyInputStream(inputStream, result);
-			System.err.println(result.toString());
+			final ByteArrayOutputStream response = new ByteArrayOutputStream();
+			IOUtils.copyInputStream(inputStream, response);
 			
+			final String content = response.toString();
+			assertTrue(content.contains("Location: http://www.own-hero.net/"));
+			assertTrue(content.contains("<title>301 Moved Permanently</title>"));
 			assertTrue(new File(dir.getAbsolutePath() + FileUtils.fileSeparator + "own-hero.net"
 			        + FileUtils.fileSeparator + "own-hero.net").exists());
 		} catch (final IOException e) {

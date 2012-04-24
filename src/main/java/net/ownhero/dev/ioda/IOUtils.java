@@ -368,15 +368,7 @@ public class IOUtils {
 	 */
 	public static final void copyInputStream(final InputStream in,
 	                                         final OutputStream out) throws IOException {
-		final byte[] buffer = new byte[1024];
-		int len;
-		
-		while ((len = in.read(buffer)) >= 0) {
-			out.write(buffer, 0, len);
-		}
-		
-		in.close();
-		out.close();
+		org.apache.commons.io.IOUtils.copy(in, out);
 	}
 	
 	/**
