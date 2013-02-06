@@ -13,6 +13,7 @@
 package net.ownhero.dev.ioda;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 import net.ownhero.dev.kanuni.annotations.bevahiors.NoneNull;
@@ -236,7 +237,20 @@ public class DateTimeUtils {
 			}
 			
 			final DateTimeFormatter dtf = DateTimeFormat.forPattern(patternBuilder.toString());
-			d = dtf.parseDateTime(dateBuilder.toString());
+			try {
+				d = dtf.parseDateTime(dateBuilder.toString());
+			} catch (final IllegalArgumentException e) {
+				if (Logger.logError()) {
+					Logger.error("Error while parsing date time string. Original string: ", dateTimeString);
+					Logger.error("Used pattern: " + pattern);
+					Logger.error("Compiled date string: " + dateBuilder.toString());
+					Logger.error("Compiled data pattern: " + patternBuilder.toString());
+					Logger.error("Current locale: " + Locale.getDefault());
+					if (e.getMessage() != null) {
+						Logger.error("Error message: " + e.getMessage());
+					}
+				}
+			}
 		}
 		
 		if (d == null) {
