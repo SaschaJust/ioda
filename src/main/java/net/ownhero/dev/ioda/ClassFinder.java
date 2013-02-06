@@ -169,8 +169,8 @@ public class ClassFinder {
 			if (resource.getPath().toLowerCase().endsWith(".jar")) {
 				classNames.addAll(getClassNamesFromJarResource(resource));
 			} else if (resource.getPath().toLowerCase().endsWith(".class")) {
-				if (Logger.logError()) {
-					Logger.error("Loading classes from external resources outside a JAR is currently not supported.");
+				if (Logger.logInfo()) {
+					Logger.info("Loading classes from external resources outside a JAR is currently not supported.");
 				}
 			}
 		}
@@ -385,8 +385,8 @@ public class ClassFinder {
 				final String currentName = current.getName();
 				if (!current.isDirectory()) {
 					if (currentName.toLowerCase().endsWith(".jar")) {
-						if (Logger.logError()) {
-							Logger.error("JAR in JAR is not supported yet. Found archive: " + currentName);
+						if (Logger.logInfo()) {
+							Logger.info("JAR in JAR is not supported yet. Found archive: " + currentName);
 						}
 					} else if ((current.getName().length() > path.length())
 					        && current.getName().substring(0, path.length()).equals(path)
@@ -609,8 +609,8 @@ public class ClassFinder {
 					final String currentName = current.getName();
 					if (!current.isDirectory()) {
 						if (currentName.toLowerCase().endsWith(".jar")) {
-							if (Logger.logError()) {
-								Logger.error("JAR in JAR is not supported yet. Found archive: " + currentName);
+							if (Logger.logInfo()) {
+								Logger.info("JAR in JAR is not supported yet. Found archive: " + currentName);
 							}
 						} else if (currentName.endsWith(".class")) {
 							String path = current.getName();
