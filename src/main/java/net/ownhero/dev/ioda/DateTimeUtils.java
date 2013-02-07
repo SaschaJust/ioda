@@ -1,5 +1,5 @@
-/*******************************************************************************
- * Copyright 2013 Kim Herzig, Sascha Just
+/***********************************************************************************************************************
+ * Copyright 2011 Kim Herzig, Sascha Just
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -9,7 +9,7 @@
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
- ******************************************************************************/
+ **********************************************************************************************************************/
 package net.ownhero.dev.ioda;
 
 import java.util.HashMap;
@@ -191,6 +191,20 @@ public class DateTimeUtils {
 	}
 	
 	/**
+	 * Parses the date with locale US.
+	 * 
+	 * @param dateTimeString
+	 *            the date time string
+	 * @param pattern
+	 *            the pattern
+	 * @return the date time
+	 */
+	public static DateTime parseDate(final String dateTimeString,
+	                                 final Regex pattern) {
+		return parseDate(dateTimeString, pattern, Locale.US);
+	}
+	
+	/**
 	 * Parses the date in form `yyyy-MM-dd HH:mm:ss Z` where Z can also be represented as non-offset. Z and :ss do not
 	 * have to be present.
 	 * 
@@ -198,14 +212,16 @@ public class DateTimeUtils {
 	 *            the datetime string, not null
 	 * @param pattern
 	 *            the pattern
+	 * @param locale
+	 *            the locale
 	 * @return the date time
 	 */
 	@NoneNull
 	public static DateTime parseDate(final String dateTimeString,
-	                                 final Regex pattern) {
+	                                 final Regex pattern,
+	                                 final Locale locale) {
 		// Condition.greaterOrEqual(dateTimeString.length(),
 		// "yyyy-MM-dd HH:mm".length());
-		
 		Match find;
 		DateTime d = null;
 		
@@ -236,20 +252,18 @@ public class DateTimeUtils {
 				        + patternBuilder.toString());
 			}
 			
-			final DateTimeFormatter dtf = DateTimeFormat.forPattern(patternBuilder.toString());
+			DateTimeFormatter dtf = DateTimeFormat.forPattern(patternBuilder.toString());
+			dtf = dtf.withLocale(locale);
 			try {
 				d = dtf.parseDateTime(dateBuilder.toString());
 			} catch (final IllegalArgumentException e) {
-				if (Logger.logError()) {
-					Logger.error("Error while parsing date time string. Original string: ", dateTimeString);
-					Logger.error("Used pattern: " + pattern);
-					Logger.error("Compiled date string: " + dateBuilder.toString());
-					Logger.error("Compiled data pattern: " + patternBuilder.toString());
-					Logger.error("Current locale: " + Locale.getDefault());
-					if (e.getMessage() != null) {
-						Logger.error("Error message: " + e.getMessage());
-					}
-				}
+				final StringBuilder builder = new StringBuilder();
+				builder.append("Error while parsing date time string. Original string: ").append(dateTimeString);
+				builder.append("Used pattern: ").append(pattern);
+				builder.append("Compiled date string: ").append(dateBuilder.toString());
+				builder.append("Compiled data pattern: ").append(patternBuilder.toString());
+				builder.append("Current locale: ").append(locale);
+				throw new IllegalArgumentException(builder.toString(), e);
 			}
 		}
 		
